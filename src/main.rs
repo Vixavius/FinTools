@@ -1,3 +1,7 @@
+use std::error::Error;
+use std::io;
+use std::process;
+
 use rust_decimal::Decimal;
 
 const CURRENCY_PRECISION: u32 = 8;
@@ -29,14 +33,14 @@ struct Account<'a> {
     id: u32,
     taxable: bool,
 
-    // Primary currency of the account, used for tracking ACB of symbols
+    // Primary currency of the account, used for tracking ACB of secritys
     currency_base: Currency,
 
     // TODO: Currency vector?
     usd: &'a mut u64,
     cad: &'a mut u64,
 
-    symbols: &'a mut Vec<AccountSymbol<'a>>,
+    securities: &'a mut Vec<AccountSecurity<'a>>,
 }
 
 impl Account<'_> {
@@ -68,83 +72,97 @@ impl Account<'_> {
     }
 }
 
-// Representation of an owned symbol including its historical activity
-struct AccountSymbol<'a> {
-    symbol: String,
+// Representation of an owned security including its historical activity
+struct AccountSecurity<'a> {
+    security: String,
     currency_base: Currency,
 
-    // Value Tuples of open and closed symbol data
+    // Value Tuples of open and closed security data
     // ie. costs or price of shares opened or closed
-    open: &'a mut (i64, Decimal),
-    closed: &'a mut Vec<(i64, Decimal, Decimal, Decimal)>,
+    open: &'a mut (Decimal, Decimal),
+    closed: &'a mut Vec<(Decimal, Decimal, Decimal, Decimal)>,
 
     acb: &'a mut Decimal,
 }
 
-impl AccountSymbol<'_> {
-    // Grab market value of open symbols
+impl AccountSecurity<'_> {
+    // Grab market value of open securities
     fn get_market_value(self, unit_price: Decimal) -> Decimal {
-        let mut sum = Decimal::new(0, CURRENCY_PRECISION);
-        let unit_decimal: Decimal = self.open.0.into();
-
-        sum += unit_decimal * unit_price;
-
-        return sum;
+        return self.open.0 * unit_price;
     }
 
-    // Grab book value of open symbols
+    // Grab book value of open securities
     fn get_book_value(self) -> Decimal {
-        let mut sum: Decimal = Decimal::new(0, CURRENCY_PRECISION);
-        let unit_decimal: Decimal = self.open.0.into();
-
-        sum += unit_decimal * self.open.1;
-
-        return sum;
+        return self.open.0 * self.open.1;
     }
 
-    // Open a local symbol for the account and update Adjusted Cost Basis
-    fn open_symbol(self, quantity: i64, unit_price: Decimal, commission: Option<Decimal>) {
-        // Adjusted Cost Basis for opening a symbol is:
-        //
-        //            existing costs + new costs + commission
-        //        ---------------------------------------------
-        //              existing quantity + new quantity
-        //
-
+    // Open a local securities and update Adjusted Cost Basis
+    fn open_security(
+        self,
+        quantity: Decimal,
+        unit_price: Decimal,
+        commission: Option<Decimal>,
+    ) -> Decimal {
+        /*  Adjusted Cost Basis for opening a security is:
+            existing costs + new costs + commission
+        ---------------------------------------------
+              existing quantity + new quantity         */
         let units = self.open.0 + quantity;
-
-        // TODO: Reduce balance of the correct currency
-
-        let costs = self.open.1
-            + (unit_price * Decimal::new(quantity, CURRENCY_PRECISION))
-            + commission.unwrap_or(Decimal::new(0, CURRENCY_PRECISION));
+        let new_costs =
+            (unit_price * quantity) + commission.unwrap_or(Decimal::new(0, CURRENCY_PRECISION));
+        let costs = self.open.1 + new_costs;
 
         self.open.0 = units;
         self.open.1 = costs;
 
-        let unit_decimal = Decimal::new(units, CURRENCY_PRECISION);
+        *self.acb = units / costs;
 
-        *self.acb = unit_decimal / costs;
+        // Return the amount to shift the balance by
+        return new_costs;
     }
 
-    // TODO: Open a foreign symbol for the account and update Adjusted Cost Basis, given the
+    // TODO: Open a foreign security for the account and update Adjusted Cost Basis, given the
     //       exchange rate of Foreign : Local currency
-    fn open_symbol_foreign(
+    fn open_security_foreign(
         self,
-        quantity: u32,
+        quantity: Decimal,
         unit_price: Decimal,
         account_currency: Currency,
-        symbol_currency: Currency,
+        secrity_currency: Currency,
         exchange_rate: Decimal,
     ) {
     }
 
-    // TODO: Close a symbol given a quantity and average price
-    fn close_symbol(quantity: u32, unit_price: Decimal) -> bool {
-        // Check given quantity of a symbol is open
+    // TODO: Close a secrity given a quantity and average price
+    fn close_security(
+        self,
+        quantity: Decimal,
+        unit_price: Decimal,
+        commission: Option<Decimal>,
+    ) -> bool {
+        if self.open.0 > quantity {}
+        // Check given quantity of a secrity is open
         // If present, move it as closed with the given unit price and calculate the gain
         return false;
     }
 }
 
-fn main() {}
+fn example() -> Result<(), Box<dyn Error>> {
+    let mut rdr = csv::Reader::from_path("exampleinput/activities.csv")?;
+    for result in rdr.records() {
+        let record = result?;
+        println!("{:?}", record);
+    }
+    Ok(())
+}
+
+fn parse_qt_record(record: csv::StringRecord) {
+    // TODO: Parse a QT record
+}
+
+fn main() {
+    if let Err(err) = example() {
+        println!("error running example: {}", err);
+        process::exit(1);
+    }
+}

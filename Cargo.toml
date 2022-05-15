@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 rust_decimal = "1.23.1"
+csv = "1.1"
